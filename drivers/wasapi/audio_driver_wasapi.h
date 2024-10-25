@@ -100,6 +100,8 @@ public:
 
 	virtual Error init() override;
 	virtual void start() override;
+	virtual bool supports_sleep() const override { return true; }
+	virtual void stop() override;
 	virtual int get_mix_rate() const override;
 	virtual SpeakerMode get_speaker_mode() const override;
 	virtual float get_latency() override;

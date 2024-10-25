@@ -71,6 +71,11 @@ void AudioDriver::audio_server_process(int p_frames, int32_t *p_buffer, bool p_u
 	}
 }
 
+void AudioDriver::stop()
+{
+	WARN_PRINT(vformat(R"(Trying to stop audio driver, but the driver (%s) doesn't support sleeping.)", get_name()));
+}
+
 void AudioDriver::update_mix_time(int p_frames) {
 	_last_mix_frames = p_frames;
 	if (OS::get_singleton()) {
@@ -327,6 +332,10 @@ void AudioServer::_driver_process(int p_frames, int32_t *p_buffer) {
 
 		todo -= to_copy;
 		to_mix -= to_copy;
+	}
+
+	if (falling_asleep && OS::get_singleton()->get_ticks_msec() - sleep_countdown_start_msec > sleep_countdown_msec) {
+		_go_to_sleep();
 	}
 
 #ifdef DEBUG_ENABLED
@@ -641,6 +650,22 @@ void AudioServer::_mix_step() {
 		}
 	}
 
+	bool should_sleep = playback_list.begin() == playback_list.end() && sample_playback_list.begin() == sample_playback_list.end();
+	for (int i = 0; should_sleep && i < buses.size(); ++i) {
+		Bus *bus = buses[i];
+		for (int k = 0; should_sleep && k < bus->channels.size(); ++k) {
+			if (bus->channels[k].active) {
+				should_sleep = false;
+			}
+		}
+	}
+
+	if (should_sleep) {
+		_start_sleep_countdown();
+	} else {
+		_stop_sleep_countdown();
+	}
+
 	mix_frames += buffer_size;
 	to_mix = buffer_size;
 }
@@ -690,6 +715,32 @@ AudioServer::AudioStreamPlaybackListNode *AudioServer::_find_playback_list_node(
 		}
 	}
 	return nullptr;
+}
+
+void AudioServer::_start_sleep_countdown() {
+	if (!falling_asleep && !sleeping && Engine::get_singleton()->is_editor_hint() && AudioDriver::get_singleton()->supports_sleep()) {
+		falling_asleep = true;
+		sleep_countdown_start_msec = OS::get_singleton()->get_ticks_msec();
+	}
+}
+
+void AudioServer::_stop_sleep_countdown() {
+	falling_asleep = false;
+}
+
+void AudioServer::_go_to_sleep()
+{
+	AudioDriver::get_singleton()->stop();
+	falling_asleep = false;
+	sleeping = true;
+}
+
+void AudioServer::_wake_from_sleep() {
+	_stop_sleep_countdown();
+	if (sleeping) {
+		AudioDriver::get_singleton()->start();
+		sleeping = false;
+	}
 }
 
 void AudioServer::_delete_stream_playback(Ref<AudioStreamPlayback> p_playback) {
@@ -1233,6 +1284,7 @@ void AudioServer::start_playback_stream(Ref<AudioStreamPlayback> p_playback, con
 	playback_node->state.store(AudioStreamPlaybackListNode::PLAYING);
 
 	playback_list.insert(playback_node);
+	_wake_from_sleep();
 }
 
 void AudioServer::stop_playback_stream(Ref<AudioStreamPlayback> p_playback) {
@@ -1480,8 +1532,12 @@ void AudioServer::init() {
 	set_bus_name(0, "Master");
 
 	if (AudioDriver::get_singleton()) {
-		AudioDriver::get_singleton()->start();
 		AudioDriver::get_singleton()->set_sample_bus_count(1);
+		if (Engine::get_singleton()->is_editor_hint() && AudioDriver::get_singleton()->supports_sleep()) {
+			sleeping = true;
+		} else {
+			AudioDriver::get_singleton()->start();
+		}
 	}
 
 #ifdef TOOLS_ENABLED
@@ -1867,6 +1923,7 @@ void AudioServer::start_sample_playback(const Ref<AudioSamplePlayback> &p_playba
 	ERR_FAIL_COND_MSG(p_playback.is_null(), "Parameter p_playback is null.");
 	AudioDriver::get_singleton()->start_sample_playback(p_playback);
 	sample_playback_list.ordered_insert(p_playback);
+	_wake_from_sleep();
 }
 
 void AudioServer::stop_sample_playback(const Ref<AudioSamplePlayback> &p_playback) {

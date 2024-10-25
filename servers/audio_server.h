@@ -98,6 +98,8 @@ public:
 
 	virtual Error init() = 0;
 	virtual void start() = 0;
+	virtual bool supports_sleep() const { return false; }
+	virtual void stop();
 	virtual int get_mix_rate() const = 0;
 	virtual SpeakerMode get_speaker_mode() const = 0;
 	virtual float get_latency() { return 0; }
@@ -294,6 +296,15 @@ private:
 		// The next few samples are stored here so we have some time to fade audio out if it ends abruptly at the beginning of the next mix.
 		AudioFrame lookahead[LOOKAHEAD_BUFFER_SIZE];
 	};
+
+	bool falling_asleep = false;
+	bool sleeping = false;
+	uint64_t sleep_countdown_start_msec;
+	uint64_t sleep_countdown_msec = 5000;
+	void _start_sleep_countdown();
+	void _stop_sleep_countdown();
+	void _go_to_sleep();
+	void _wake_from_sleep();
 
 	SafeList<AudioStreamPlaybackListNode *> playback_list;
 	SafeList<AudioStreamPlaybackBusDetails *> bus_details_graveyard;

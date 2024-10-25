@@ -827,7 +827,7 @@ void AudioDriverWASAPI::thread_func(void *p_udata) {
 
 		if (!ad->audio_output.audio_client) {
 			Error err = ad->init_output_device(true);
-			if (err == OK) {
+			if (err == OK && ad->audio_output.active.is_set()) {
 				ad->start();
 			}
 
@@ -918,12 +918,27 @@ void AudioDriverWASAPI::thread_func(void *p_udata) {
 }
 
 void AudioDriverWASAPI::start() {
-	if (audio_output.audio_client) {
+	if (audio_output.audio_client && !audio_output.active.is_set()) {
 		HRESULT hr = audio_output.audio_client->Start();
 		if (hr != S_OK) {
 			ERR_PRINT("WASAPI: Start failed");
 		} else {
 			audio_output.active.set();
+		}
+	}
+}
+
+void AudioDriverWASAPI::stop() {
+	if (audio_output.audio_client && audio_output.active.is_set()) {
+		HRESULT hr = audio_output.audio_client->Stop();
+		if (hr != S_OK) {
+			ERR_PRINT("WASAPI: Stop failed");
+		} else {
+			hr = audio_output.audio_client->Reset();
+			if (hr != S_OK) {
+				ERR_PRINT("WASAPI: Reset failed");
+			}
+			audio_output.active.clear();
 		}
 	}
 }
