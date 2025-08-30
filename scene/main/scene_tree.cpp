@@ -200,6 +200,8 @@ void SceneTree::flush_transform_notifications() {
 		n = nx;
 		node->notification(NOTIFICATION_TRANSFORM_CHANGED);
 	}
+
+	root->update_mouse_cursor_state();
 }
 
 bool SceneTree::is_accessibility_enabled() const {
